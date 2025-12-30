@@ -137,25 +137,217 @@ const App = () => {
   };
 
   const handleExportPNG = async () => {
-    if (!window.html2canvas || !plateRef.current) return;
-    
-    try {
-      const canvas = await window.html2canvas(plateRef.current, {
-        backgroundColor: '#ffffff',
-        scale: 2, // 提高分辨率
-        logging: false,
-        useCORS: true
+  try {
+    // ===== 1) 用“同一套规则”生成颜色映射（避免依赖 Tailwind/oklch）=====
+    const uniqueGenes = [...new Set(wells.map(w => w.gene).filter(Boolean))];
+    const uniqueSamples = [...new Set(wells.map(w => w.sample).filter(Boolean))];
+
+    const genePalette = [
+      { bg: '#eff6ff', border: '#bfdbfe' }, // blue-50 / blue-200
+      { bg: '#ecfdf5', border: '#a7f3d0' }, // emerald-50 / emerald-200
+      { bg: '#fffbeb', border: '#fde68a' }, // amber-50 / amber-200
+      { bg: '#faf5ff', border: '#e9d5ff' }, // purple-50 / purple-200
+      { bg: '#fff1f2', border: '#fecdd3' }, // rose-50 / rose-200
+      { bg: '#ecfeff', border: '#a5f3fc' }, // cyan-50 / cyan-200
+    ];
+
+    const sampleStripePalette = [
+      '#3b82f6', '#ef4444', '#10b981', '#f59e0b',
+      '#a855f7', '#ec4899', '#6366f1', '#f97316',
+      '#14b8a6', '#84cc16', '#d946ef', '#0ea5e9',
+    ];
+
+    const sampleTextPalette = [
+      '#1d4ed8', '#b91c1c', '#047857', '#b45309',
+      '#6d28d9', '#be185d', '#4338ca', '#c2410c',
+      '#0f766e', '#4d7c0f', '#a21caf', '#0369a1',
+    ];
+
+    const geneMap = {};
+    uniqueGenes.forEach((g, i) => { geneMap[g] = genePalette[i % genePalette.length]; });
+
+    const sampleMap = {};
+    uniqueSamples.forEach((s, i) => {
+      sampleMap[s] = {
+        stripe: sampleStripePalette[i % sampleStripePalette.length],
+        text: sampleTextPalette[i % sampleTextPalette.length],
+      };
+    });
+
+    // ===== 2) 生成 SVG（96孔板：含行列标签、孔号、样本名/引物名、颜色条）=====
+    const ROWS_LOCAL = ROWS; // 你代码里已有 ROWS / COLS
+    const COLS_LOCAL = COLS;
+
+    // 尺寸：可按需要微调
+    const pad = 18;
+    const labelW = 44;
+    const labelH = 28;
+    const cellW = 122;
+    const cellH = 74;
+    const stripeW = 7;
+
+    const width = pad * 2 + labelW + COLS_LOCAL.length * cellW;
+    const height = pad * 2 + labelH + ROWS_LOCAL.length * cellH;
+
+    const esc = (s) =>
+      String(s ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    // 简单文本换行：按“字符数”粗略折行（够用且稳定）
+    const wrap = (txt, maxCharsPerLine, maxLines = 2) => {
+      const t = String(txt ?? '').trim();
+      if (!t) return [];
+      const out = [];
+      let cur = '';
+      for (const ch of t) {
+        if (cur.length >= maxCharsPerLine) {
+          out.push(cur);
+          cur = '';
+          if (out.length >= maxLines) break;
+        }
+        cur += ch;
+      }
+      if (out.length < maxLines && cur) out.push(cur);
+      return out;
+    };
+
+    let svg = '';
+    svg += `<?xml version="1.0" encoding="UTF-8"?>`;
+    svg += `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`;
+
+    // 背景
+    svg += `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>`;
+
+    // 标题（可删）
+    svg += `<text x="${pad}" y="${pad - 4 + 14}" font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial" font-size="14" font-weight="800" fill="#0f172a">96孔板布局</text>`;
+
+    const gridX0 = pad + labelW;
+    const gridY0 = pad + labelH;
+
+    // 列标签
+    COLS_LOCAL.forEach((c, cIdx) => {
+      const x = gridX0 + cIdx * cellW + cellW / 2;
+      const y = pad + labelH - 10;
+      svg += `<text x="${x}" y="${y}" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
+        font-size="12" font-weight="800" fill="#f97316">${esc(c)}</text>`;
+    });
+
+    // 行标签 + 单元格
+    ROWS_LOCAL.forEach((r, rIdx) => {
+      // 行标签
+      const lx = pad + labelW / 2;
+      const ly = gridY0 + rIdx * cellH + cellH / 2 + 5;
+      svg += `<text x="${lx}" y="${ly}" text-anchor="middle"
+        font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
+        font-size="12" font-weight="900" fill="#f97316">${esc(r)}</text>`;
+
+      COLS_LOCAL.forEach((c, cIdx) => {
+        const idx = rIdx * 12 + cIdx;
+        const well = wells[idx];
+        const hasData = !!(well?.sample || well?.gene);
+
+        const geneStyle = hasData && well.gene ? geneMap[well.gene] : null;
+        const sampleStyle = hasData && well.sample ? sampleMap[well.sample] : null;
+
+        const x = gridX0 + cIdx * cellW;
+        const y = gridY0 + rIdx * cellH;
+
+        const bg = hasData && geneStyle ? geneStyle.bg : '#f8fafc';
+        const border = hasData && geneStyle ? geneStyle.border : '#e2e8f0';
+
+        // 外框
+        svg += `<rect x="${x}" y="${y}" width="${cellW}" height="${cellH}" rx="14" ry="14" fill="${bg}" stroke="${border}" stroke-width="2"/>`;
+
+        // 左侧样本条
+        if (hasData && sampleStyle) {
+          svg += `<rect x="${x}" y="${y}" width="${stripeW}" height="${cellH}" rx="14" ry="14" fill="${sampleStyle.stripe}"/>`;
+          // 覆盖右侧圆角（让条只在左侧圆角）
+          svg += `<rect x="${x + stripeW}" y="${y}" width="2" height="${cellH}" fill="${bg}"/>`;
+        }
+
+        // 孔号（左上角）
+        svg += `<text x="${x + stripeW + 8}" y="${y + 16}"
+          font-family="ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+          font-size="9" font-weight="700" fill="#cbd5e1">${esc(r)}${esc(c)}</text>`;
+
+        // 内容：样本名 + 分割线 + 引物名
+        if (hasData) {
+          const contentX = x + stripeW + 10;
+          const contentW = cellW - stripeW - 20;
+
+          const sample = (well?.sample || '').trim();
+          const gene = (well?.gene || '').trim();
+
+          // 样本名（尽量两行）
+          const sampleLines = wrap(sample, 10, 2);
+          const sampleColor = sampleStyle?.text || '#0f172a';
+
+          let ty = y + 34;
+          sampleLines.forEach((line) => {
+            svg += `<text x="${contentX + contentW / 2}" y="${ty}" text-anchor="middle"
+              font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
+              font-size="14" font-weight="900" fill="${sampleColor}">${esc(line)}</text>`;
+            ty += 16;
+          });
+
+          // 分割线
+          if (sample) {
+            const midY = y + 52;
+            svg += `<line x1="${x + cellW / 2 - 10}" y1="${midY}" x2="${x + cellW / 2 + 10}" y2="${midY}" stroke="#cbd5e1" stroke-opacity="0.5" stroke-width="2" />`;
+          }
+
+          // 引物名
+          if (gene) {
+            svg += `<text x="${contentX + contentW / 2}" y="${y + cellH - 14}" text-anchor="middle"
+              font-family="ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial"
+              font-size="12" font-weight="800" fill="#94a3b8">${esc(gene.toUpperCase())}</text>`;
+          }
+        }
       });
-      
-      const image = canvas.toDataURL("image/png");
-      const link = document.createElement('a');
-      link.href = image;
-      link.download = `qPCR_Plate_Layout_${new Date().getTime()}.png`;
-      link.click();
-    } catch (err) {
-      console.error("导出图片失败:", err);
-    }
-  };
+    });
+
+    svg += `</svg>`;
+
+    // ===== 3) SVG -> PNG（canvas）并下载 =====
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+
+    const img = new Image();
+    // 如果将来你在 SVG 里嵌入外部资源，再考虑 crossOrigin
+    await new Promise((resolve, reject) => {
+      img.onload = () => resolve();
+      img.onerror = (e) => reject(new Error('SVG 渲染失败，无法生成图片'));
+      img.src = url;
+    });
+
+    const scale = 2; // 2倍更清晰
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.round(width * scale);
+    canvas.height = Math.round(height * scale);
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    ctx.drawImage(img, 0, 0);
+
+    URL.revokeObjectURL(url);
+
+    const pngUrl = canvas.toDataURL('image/png');
+    const a = document.createElement('a');
+    a.href = pngUrl;
+    a.download = `96孔板_${new Date().getTime()}.png`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  } catch (err) {
+    console.error('导出图片失败:', err);
+    alert(`导出图片失败：${err?.message || err}`);
+  }
+};
 
   const geneCalculations = useMemo(() => {
     const stats = {};
@@ -234,7 +426,7 @@ const App = () => {
           
           {/* PLATE PREVIEW (FULL WIDTH ON TOP) */}
           <div className="w-full space-y-8">
-            <div ref={plateRef} className={`bg-white border border-slate-200 shadow-sm relative transition-all ${viewMode === 'mobile' ? 'p-4 rounded-3xl' : 'p-10 rounded-[3rem]'}`}>
+            <div id="plate-capture" ref={plateRef} className={`bg-white border border-slate-200 shadow-sm relative transition-all ${viewMode === 'mobile' ? 'p-4 rounded-3xl' : 'p-10 rounded-[3rem]'}`}>
               <div className="flex justify-between items-center mb-10">
                 <div className="space-y-1">
                   <div className="flex items-center gap-2 text-indigo-600">
@@ -253,10 +445,10 @@ const App = () => {
                 <div className="overflow-x-auto pb-4 custom-scrollbar">
                   <div className="inline-grid grid-cols-[40px_repeat(12,1fr)] gap-3 min-w-[800px]">
                     <div />
-                    {COLS.map(c => <div key={c} className={`text-center font-black text-[11px] ${[6,7].includes(c) ? 'text-indigo-600 bg-indigo-50/50 rounded-t-lg' : 'text-slate-300'}`}>{c}</div>)}
+                    {COLS.map(c => <div key={c} className={`text-center font-black text-[11px] ${[6,7].includes(c) ? 'text-orange-500 bg-orange-50/50 rounded-t-lg' : 'text-orange-500'}`}>{c}</div>)}
                     {ROWS.map((row, rIdx) => (
                       <React.Fragment key={row}>
-                        <div className="flex items-center justify-center font-black text-slate-300 text-xs">{row}</div>
+                        <div className="flex items-center justify-center font-black text-orange-500 text-xs">{row}</div>
                         {COLS.map((col, cIdx) => {
                           const idx = rIdx * 12 + cIdx;
                           const well = wells[idx];
@@ -264,7 +456,7 @@ const App = () => {
                           const colorClass = hasData ? (geneColors[well.gene] || 'bg-slate-50 border-slate-200') : 'bg-slate-50/20 border-slate-100';
                           const sampleStyles = hasData ? sampleColors[well.sample] : null;
                           return (
-                            <div key={idx} className={`${viewMode === 'mobile' ? 'h-20' : 'h-24'} border rounded-2xl transition-all flex flex-row items-stretch overflow-hidden relative ${colorClass} ${hasData ? 'shadow-sm border-opacity-60 scale-100 hover:scale-110 z-10' : 'hover:border-slate-200'} ${[6,7].includes(col) && !hasData ? 'bg-indigo-50/5' : ''}`}>
+                            <div key={idx} className={`${viewMode === 'mobile' ? 'h-20' : 'h-12'} border rounded-2xl transition-all flex flex-row items-stretch overflow-hidden relative ${colorClass} ${hasData ? 'shadow-sm border-opacity-60 scale-100 hover:scale-110 z-10' : 'hover:border-slate-200'} ${[6,7].includes(col) && !hasData ? 'bg-indigo-50/5' : ''}`}>
                               {hasData && <div className={`w-1.5 shrink-0 ${sampleStyles?.stripe || 'bg-slate-300'}`}></div>}
                               <div className="flex-1 flex flex-col items-center justify-center p-1.5 text-center relative overflow-hidden">
                                 <span className="text-[7px] text-slate-300 absolute top-1 left-1.5 font-mono">{row}{col}</span>
@@ -288,7 +480,7 @@ const App = () => {
               <div className="mt-10 pt-6 border-t border-slate-100 flex flex-wrap gap-8 items-center justify-center">
                 <div className="flex items-center gap-6 text-[10px] font-bold text-slate-400 uppercase tracking-widest">
                   <div className="flex items-center gap-2"><div className="w-1.5 h-4 bg-indigo-500 rounded-full"></div> 侧边条: 样品来源</div>
-                  <div className="flex items-center gap-2"><div className="w-4 h-4 bg-indigo-50 border border-indigo-200 rounded-md"></div> 背景色: 基因体系</div>
+                  <div className="flex items-center gap-2"><div className="w-4 h-4 bg-indigo-50 border border-indigo-200 rounded-md"></div> 背景色: 引物体系</div>
                 </div>
               </div>
             </div>
@@ -316,7 +508,7 @@ const App = () => {
                         <span className="font-bold text-slate-500 group-hover:text-slate-700 transition-colors">{item.name}</span>
                         <div className="flex items-baseline gap-1">
                            <span className="font-mono font-black text-slate-900">{item.total}</span>
-                           <span className="text-[9px] text-slate-400 font-bold uppercase">μL</span>
+                           <span className="text-[9px] text-slate-400 font-bold uppercase">微升</span>
                         </div>
                       </div>
                     ))}
@@ -368,7 +560,7 @@ const App = () => {
                     <label className="text-[9px] font-black text-slate-600 uppercase tracking-widest">排布优先级</label>
                     <div className="grid grid-cols-1 gap-2">
                       <button onClick={() => setAutoInput({...autoInput, priority: 'gene'})} className={`py-3 px-4 rounded-2xl text-[10px] font-black transition-all flex items-center justify-between ${autoInput.priority === 'gene' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:text-slate-400'}`}>
-                        体系优先 {autoInput.priority === 'gene' && <CheckCircle2 size={12}/>}
+                        引物优先 {autoInput.priority === 'gene' && <CheckCircle2 size={12}/>}
                       </button>
                       <button onClick={() => setAutoInput({...autoInput, priority: 'sample'})} className={`py-3 px-4 rounded-2xl text-[10px] font-black transition-all flex items-center justify-between ${autoInput.priority === 'sample' ? 'bg-indigo-600 text-white shadow-lg' : 'bg-slate-800 text-slate-500 hover:text-slate-400'}`}>
                         样本优先 {autoInput.priority === 'sample' && <CheckCircle2 size={12}/>}
@@ -421,7 +613,7 @@ const App = () => {
                       </div>
                       <div className="flex items-center gap-2">
                         <input type="number" step="0.1" className="w-16 bg-slate-50 rounded-xl px-2 py-1.5 text-xs font-mono font-black text-right border border-transparent focus:bg-white focus:border-indigo-200 outline-none" value={item.vol} onChange={e => updateRecipeItem(item.id, 'vol', parseFloat(e.target.value) || 0)} />
-                        <span className="text-[10px] font-black text-slate-300">μL</span>
+                        <span className="text-[10px] font-black text-slate-300">微升</span>
                       </div>
                       <button onClick={() => setRecipe(recipe.filter(r => r.id !== item.id))} className="text-slate-200 hover:text-red-400 transition-colors"><Minus size={16}/></button>
                     </div>
@@ -432,7 +624,7 @@ const App = () => {
                   <div className="flex justify-between items-baseline px-2 text-slate-900">
                     <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">单孔体系总量:</label>
                     <span className="text-2xl font-black text-slate-900 font-mono tracking-tighter italic">
-                      {totalVolPerWell.toFixed(1)} <span className="text-xs uppercase ml-1 not-italic text-slate-400">μL</span>
+                      {totalVolPerWell.toFixed(1)} <span className="text-xs uppercase ml-1 not-italic text-slate-400">微升</span>
                     </span>
                   </div>
                   <div className="flex justify-between items-center bg-indigo-50/50 p-6 rounded-[2rem] border border-indigo-100/50">
