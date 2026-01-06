@@ -390,7 +390,7 @@ const App = () => {
 
   const utilization = useMemo(() => Math.round((wells.filter(w => w).length / currentPlate.size) * 100), [wells, currentPlate]);
 
-  const exportToSVG = () => {
+  const exportToPNG = () => {
     // 强制显示所有列或者根据内容
     const startCol = activeCols.start; // 或者从0开始
     const endCol = activeCols.end;
@@ -437,10 +437,27 @@ const App = () => {
       }
     }
     svg += `</svg>`;
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
-    link.download = `qPCR_${plateType}Well_Layout_${new Date().getTime()}.svg`;
-    link.click();
+
+    // PNG Conversion Logic
+    const canvas = document.createElement('canvas');
+    canvas.width = svgWidth;
+    canvas.height = svgHeight;
+    const ctx = canvas.getContext('2d');
+    
+    const img = new Image();
+    const svgBlob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+    const url = URL.createObjectURL(svgBlob);
+    
+    img.onload = () => {
+      ctx.drawImage(img, 0, 0);
+      const pngUrl = canvas.toDataURL('image/png');
+      const link = document.createElement('a');
+      link.href = pngUrl;
+      link.download = `qPCR_${plateType}Well_Layout_${new Date().getTime()}.png`;
+      link.click();
+      URL.revokeObjectURL(url);
+    };
+    img.src = url;
   };
 
   const handleDragStart = (idx, wellId) => {
@@ -701,8 +718,8 @@ const App = () => {
               </div>
 
               <div className={`flex items-center gap-2 ${isMobile ? 'w-full' : ''}`}>
-                <button onClick={exportToSVG} className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-black text-xs shadow-lg shadow-emerald-100">
-                  <Download className="w-5 h-5" /> 导出 SVG
+                <button onClick={exportToPNG} className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-black text-xs shadow-lg shadow-emerald-100">
+                  <Download className="w-5 h-5" /> 导出 PNG
                 </button>
                 <button onClick={handleFullReset} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all active:scale-90 shadow-sm border border-rose-100 flex items-center justify-center" title="初始化方案">
                   <RotateCcw className="w-5 h-5" />
