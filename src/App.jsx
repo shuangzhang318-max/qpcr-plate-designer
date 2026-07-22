@@ -28,8 +28,13 @@ import {
 } from 'lucide-react';
 
 const PLATE_CONFIGS = {
-  96: { rows: 8, cols: 12, size: 96, name: '96孔板' },
-  384: { rows: 16, cols: 24, size: 384, name: '384孔板' }
+  96: { rows: 8, cols: 12, size: 96, name: '96-well plate' },
+  384: { rows: 16, cols: 24, size: 384, name: '384-well plate' }
+};
+
+const COPY = {
+  zh: { plate96: '96孔板', plate384: '384孔板', configuration: '配置中心', primerFocused: '引物集中', sampleFocused: '样本集中', reverseOrientation: '一键反转全局复孔方向', replicates: '复孔数量 (n)', primerList: '引物清单', sampleList: '样本清单', reactionSetup: '体系配制', totalPerWell: '单孔总体积', excess: '损耗余量 (%)', addComponent: '添加组分', utilization: '利用率', mode: '模式', default: '默认', vertical: '竖向', horizontal: '横向', selectedGroup: '选中组', selectedGroups: (count) => `已选中 ${count} 组`, batchEditing: '批量编辑中', insufficientWells: '孔位不足', overflow: (count) => `有 ${count} 组复孔无法放下，请尝试切换复孔方向，必要时减少样本或引物。`, exportPng: '导出 PNG', resetLayout: '初始化方案', setupGuide: '体系指南', totalMixVolume: (loss) => `总配液体积 (含${loss}%损耗)`, waiting: '等待数据', tips: '操作提示', tip1: '切换到384孔板模式时，建议使用大屏幕设备查看。', tip2: '点击目标加样孔可选中一组复孔，并单独调整复孔方向；按住 Ctrl/Command 键点击可实现多选并批量调节方向。', tip3: '结构化交换：拖拽已选中孔位，可整体移动并保持其内部横纵结构不变。', tip4: '修改配置后，系统会重置自定义排版并重新执行智能方向决策。', language: '语言选择', title: 'qPCR 智能布板工具' },
+  en: { plate96: '96-well', plate384: '384-well', configuration: 'Configuration', primerFocused: 'Primer-focused', sampleFocused: 'Sample-focused', reverseOrientation: 'Reverse all replicate orientations', replicates: 'Replicates (n)', primerList: 'Primer list', sampleList: 'Sample list', reactionSetup: 'Reaction Setup', totalPerWell: 'Total volume per well', excess: 'Excess allowance (%)', addComponent: 'Add component', utilization: 'Utilization', mode: 'mode', default: 'Default', vertical: 'Vertical', horizontal: 'Horizontal', selectedGroup: 'Selected group', selectedGroups: (count) => `${count} groups selected`, batchEditing: 'Batch editing', insufficientWells: 'Insufficient wells', overflow: (count) => `${count} replicate group(s) could not be placed. Try changing orientation or reducing samples or primers.`, exportPng: 'Export PNG', resetLayout: 'Reset layout', setupGuide: 'Reaction Setup Guide', totalMixVolume: (loss) => `Total reaction volume (${loss}% excess)`, waiting: 'Waiting for data', tips: 'Tips', tip1: 'Use a large display when working with a 384-well plate.', tip2: 'Select a replicate group by clicking a populated well, then adjust its orientation. Hold Ctrl/Command while clicking to select multiple groups.', tip3: 'Structured exchange: drag selected wells to move the complete group while preserving its orientation.', tip4: 'Changing the configuration resets custom placement and reruns smart orientation.', language: 'Language selector', title: 'qPCR Smart Layout' }
 };
 
 const App = () => {
@@ -55,6 +60,7 @@ const App = () => {
 
   // --- 状态定义 ---
   const [viewMode, setViewMode] = useState('desktop'); 
+  const [language, setLanguage] = useState(() => new URLSearchParams(window.location.search).get('lang') === 'en' || localStorage.getItem('qpcr-plate-language') === 'en' ? 'en' : 'zh');
   const [plateType, setPlateType] = useState(96); // 96 or 384
   const [samplesInput, setSamplesInput] = useState(DEFAULT_SAMPLES);
   const [targetsInput, setTargetsInput] = useState(DEFAULT_TARGETS);
@@ -73,6 +79,20 @@ const App = () => {
   });
 
   const currentPlate = PLATE_CONFIGS[plateType];
+  const t = COPY[language];
+
+  const changeLanguage = (nextLanguage) => {
+    setLanguage(nextLanguage);
+    localStorage.setItem('qpcr-plate-language', nextLanguage);
+    const url = new URL(window.location.href);
+    if (nextLanguage === 'en') url.searchParams.set('lang', 'en'); else url.searchParams.delete('lang');
+    window.history.replaceState({}, '', url);
+  };
+
+  useEffect(() => {
+    document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN';
+    document.title = t.title;
+  }, [language, t.title]);
 
   const [wells, setWells] = useState(Array(96).fill(null));
   const [overflowInfo, setOverflowInfo] = useState({ isOverflowing: false, missingGroups: 0 });
@@ -542,19 +562,23 @@ const App = () => {
           </div>
           
           <div className="flex items-center gap-4">
+             <div className="flex bg-slate-100 rounded-xl p-1 border border-slate-200" role="group" aria-label={t.language}>
+                <button onClick={() => changeLanguage('zh')} aria-pressed={language === 'zh'} className={`px-2 py-1.5 rounded-lg text-[11px] font-black ${language === 'zh' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>中文</button>
+                <button onClick={() => changeLanguage('en')} aria-pressed={language === 'en'} className={`px-2 py-1.5 rounded-lg text-[11px] font-black ${language === 'en' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>EN</button>
+             </div>
              {/* 孔板模式切换按钮 */}
              <div className="flex bg-slate-100 rounded-[1.2rem] p-1 border border-slate-200">
                 <button 
                   onClick={() => plateType !== 96 && togglePlateType()}
                   className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${plateType === 96 ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <Grid3X3 className="w-4 h-4" /> 96孔板
+                  <Grid3X3 className="w-4 h-4" /> {t.plate96}
                 </button>
                 <button 
                   onClick={() => plateType !== 384 && togglePlateType()}
                   className={`px-4 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-2 ${plateType === 384 ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
                 >
-                  <Grid className="w-4 h-4" /> 384孔板
+                  <Grid className="w-4 h-4" /> {t.plate384}
                 </button>
              </div>
 
@@ -575,13 +599,13 @@ const App = () => {
         <div className={`${isMobile ? 'order-2' : 'lg:col-span-3'} space-y-5`}>
           <section className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-50">
             <h2 className="text-lg font-black mb-5 flex items-center gap-2 text-indigo-600 uppercase tracking-tight">
-              <Settings2 className="w-5 h-5" /> 配置中心
+              <Settings2 className="w-5 h-5" /> {t.configuration}
             </h2>
             
             <div className="space-y-4">
               <div className="grid grid-cols-2 gap-2 p-1 bg-slate-100 rounded-2xl">
-                <button onClick={() => setPriority('target')} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-black transition-all ${priority === 'target' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>引物集中</button>
-                <button onClick={() => setPriority('sample')} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-black transition-all ${priority === 'sample' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>样本集中</button>
+                <button onClick={() => setPriority('target')} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-black transition-all ${priority === 'target' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>{t.primerFocused}</button>
+                <button onClick={() => setPriority('sample')} className={`flex items-center justify-center gap-1.5 py-2.5 rounded-xl text-[11px] font-black transition-all ${priority === 'sample' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-400'}`}>{t.sampleFocused}</button>
               </div>
 
               <button 
@@ -589,18 +613,18 @@ const App = () => {
                 className="w-full py-3 bg-indigo-50 text-indigo-600 rounded-2xl border-2 border-indigo-100 hover:border-indigo-500 transition-all font-black text-xs flex items-center justify-center gap-2 shadow-sm active:scale-95"
               >
                 <Columns className={`w-4 h-4 transition-transform duration-500 ${globalOrientation === 'vertical' ? 'rotate-90' : ''}`} />
-                一键反转全局复孔方向
+                {t.reverseOrientation}
               </button>
 
               <div className="space-y-4">
                 <div className="bg-indigo-50/50 p-4 rounded-2xl border border-indigo-100 flex justify-between items-center group">
-                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">复孔数量 (n)</label>
+                  <label className="text-[10px] font-black text-indigo-400 uppercase tracking-widest">{t.replicates}</label>
                   <input type="number" value={replicates} onChange={e => setReplicates(Math.max(1, parseInt(e.target.value) || 1))} className="w-12 text-center font-black text-indigo-600 bg-transparent text-xl outline-none" />
                 </div>
                 
                 <div className="space-y-1">
                   <div className="flex justify-between items-center mb-1 px-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">引物清单</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.primerList}</label>
                     <button onClick={quickAddTarget} className="text-indigo-500 hover:scale-125 transition-all"><PlusCircle className="w-5 h-5 shadow-sm rounded-full" /></button>
                   </div>
                   <textarea value={targetsInput} onChange={e => setTargetsInput(e.target.value)} className="w-full p-4 bg-slate-50 border-none rounded-2xl text-xs h-28 focus:ring-4 ring-indigo-50 transition-all shadow-inner" placeholder="Gapdh, Target 1..." />
@@ -608,7 +632,7 @@ const App = () => {
 
                 <div className="space-y-1">
                   <div className="flex justify-between items-center mb-1 px-1">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">样本清单</label>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{t.sampleList}</label>
                     <button onClick={quickAddSample} className="text-indigo-500 hover:scale-125 transition-all"><PlusCircle className="w-5 h-5 shadow-sm rounded-full" /></button>
                   </div>
                   <textarea value={samplesInput} onChange={e => setSamplesInput(e.target.value)} className="w-full p-4 bg-slate-50 border-none rounded-2xl text-xs h-28 focus:ring-4 ring-indigo-50 transition-all shadow-inner" placeholder="S1, S2, S3..." />
@@ -619,19 +643,19 @@ const App = () => {
 
           <section className="bg-white p-6 rounded-[2.5rem] shadow-xl border border-slate-50">
             <h2 className="text-lg font-black mb-5 flex items-center gap-2 text-emerald-600 uppercase tracking-tight">
-              <FlaskConical className="w-5 h-5" /> 体系配制
+              <FlaskConical className="w-5 h-5" /> {t.reactionSetup}
             </h2>
             <div className="space-y-4">
               <div className="grid grid-cols-1 gap-3">
                 <div className="flex justify-between items-center bg-emerald-50 p-4 rounded-2xl border border-emerald-100">
-                  <span className="text-[10px] font-black text-emerald-600 uppercase">单孔总体积</span>
+                  <span className="text-[10px] font-black text-emerald-600 uppercase">{t.totalPerWell}</span>
                   <span className="text-xl font-black text-emerald-700 tracking-tighter">{totalVolPerWell.toFixed(1)} <small className="text-xs">μl</small></span>
                 </div>
                 
                 <div className="flex justify-between items-center bg-amber-50 p-4 rounded-2xl border border-amber-100">
                   <div className="flex items-center gap-2">
                     <Percent className="w-4 h-4 text-amber-500" />
-                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">损耗余量 (%)</span>
+                    <span className="text-[10px] font-black text-amber-600 uppercase tracking-widest">{t.excess}</span>
                   </div>
                   <input 
                     type="number" 
@@ -655,7 +679,7 @@ const App = () => {
                 ))}
               </div>
               <button onClick={addComponent} className="w-full py-3 border-2 border-dashed border-emerald-100 rounded-2xl text-emerald-400 hover:text-emerald-600 hover:border-emerald-300 transition-all flex items-center justify-center gap-2 text-[11px] font-black uppercase">
-                <Plus className="w-4 h-4" /> 添加组分
+                <Plus className="w-4 h-4" /> {t.addComponent}
               </button>
             </div>
           </section>
@@ -669,8 +693,8 @@ const App = () => {
               <div className="flex flex-col gap-1">
                 <h2 className={`${isMobile ? 'text-3xl' : 'text-4xl'} font-black text-slate-800 tracking-tighter uppercase italic`}>Plate Explorer</h2>
                 <div className="flex items-center justify-center gap-2 mt-2">
-                  <span className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-full shadow-lg">利用率: {utilization}%</span>
-                  <div className="text-[10px] font-black px-4 py-1.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">{currentPlate.name}模式 | 默认 {globalOrientation === 'vertical' ? '竖向' : '横向'}</div>
+                  <span className="px-4 py-1.5 bg-indigo-600 text-white text-[10px] font-black rounded-full shadow-lg">{t.utilization}: {utilization}%</span>
+                  <div className="text-[10px] font-black px-4 py-1.5 bg-indigo-50 text-indigo-700 rounded-full border border-indigo-100">{language === 'zh' ? `${plateType}孔板` : currentPlate.name} {t.mode} | {t.default} {globalOrientation === 'vertical' ? t.vertical : t.horizontal}</div>
                 </div>
               </div>
 
@@ -680,10 +704,10 @@ const App = () => {
                   <div className="bg-indigo-600 px-5 py-2.5 rounded-[2rem] shadow-2xl text-white flex items-center gap-4 animate-in fade-in zoom-in duration-300 w-full max-w-sm border border-indigo-400 relative overflow-hidden">
                     <div className="flex flex-col border-r border-white/20 pr-4 shrink-0 text-left relative z-10">
                       <p className="text-[9px] font-black opacity-60 uppercase tracking-widest leading-none mb-1.5">
-                        {selectedGroupIds.length === 1 ? '选中组' : `已选中 ${selectedGroupIds.length} 组`}
+                        {selectedGroupIds.length === 1 ? t.selectedGroup : t.selectedGroups(selectedGroupIds.length)}
                       </p>
                       <p className="text-[11px] font-black truncate max-w-[90px] leading-none">
-                        {selectedGroupIds.length === 1 ? selectedGroupIds[0] : '批量编辑中'}
+                        {selectedGroupIds.length === 1 ? selectedGroupIds[0] : t.batchEditing}
                       </p>
                     </div>
                     <div className="flex-1 flex gap-1.5 bg-black/20 p-1 rounded-[1.2rem] relative z-10">
@@ -691,13 +715,13 @@ const App = () => {
                         onClick={() => updateSelectedGroupsOrientation('horizontal')} 
                         className={`flex-1 py-2 text-white rounded-xl transition-all font-black text-[10px] uppercase hover:bg-white/10`}
                       >
-                        横向
+                        {t.horizontal}
                       </button>
                       <button 
                         onClick={() => updateSelectedGroupsOrientation('vertical')} 
                         className={`flex-1 py-2 text-white rounded-xl transition-all font-black text-[10px] uppercase hover:bg-white/10`}
                       >
-                        竖向
+                        {t.vertical}
                       </button>
                     </div>
                     <button onClick={handleClearSelection} className="ml-1 text-white/50 hover:text-white transition-colors relative z-10"><X className="w-5 h-5" /></button>
@@ -708,9 +732,9 @@ const App = () => {
                       <AlertTriangle className="w-5 h-5" />
                     </div>
                     <div className="flex-1 text-left">
-                      <p className="text-[10px] font-black uppercase tracking-widest opacity-80 leading-none mb-1">孔位不足</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-80 leading-none mb-1">{t.insufficientWells}</p>
                       <p className="text-[11px] font-black leading-tight">
-                        有 {overflowInfo.missingGroups} 组复孔无法放下，请尝试切换复孔方向，必要时减少样本或引物。
+                        {t.overflow(overflowInfo.missingGroups)}
                       </p>
                     </div>
                   </div>
@@ -719,9 +743,9 @@ const App = () => {
 
               <div className={`flex items-center gap-2 ${isMobile ? 'w-full' : ''}`}>
                 <button onClick={exportToPNG} className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-emerald-600 text-white rounded-2xl hover:bg-emerald-700 transition-all font-black text-xs shadow-lg shadow-emerald-100">
-                  <Download className="w-5 h-5" /> 导出 PNG
+                  <Download className="w-5 h-5" /> {t.exportPng}
                 </button>
-                <button onClick={handleFullReset} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all active:scale-90 shadow-sm border border-rose-100 flex items-center justify-center" title="初始化方案">
+                <button onClick={handleFullReset} className="p-3.5 bg-rose-50 text-rose-600 rounded-2xl hover:bg-rose-600 hover:text-white transition-all active:scale-90 shadow-sm border border-rose-100 flex items-center justify-center" title={t.resetLayout}>
                   <RotateCcw className="w-5 h-5" />
                 </button>
               </div>
@@ -805,7 +829,7 @@ const App = () => {
                    <div className="flex justify-between items-center mb-8">
                       <div className="flex flex-col">
                         <span className="text-[11px] font-black text-emerald-400 uppercase tracking-[0.2em] mb-1">Reference Master Mix</span>
-                        <h3 className="text-2xl font-black text-emerald-800 leading-none">{mixSummary.target} 体系指南</h3>
+                        <h3 className="text-2xl font-black text-emerald-800 leading-none">{mixSummary.target} {t.setupGuide}</h3>
                       </div>
                       <div className="bg-emerald-600 text-white px-5 py-2 rounded-2xl text-[11px] font-black shadow-lg uppercase">
                         {mixSummary.count} Wells
@@ -819,37 +843,37 @@ const App = () => {
                         </div>
                       ))}
                       <div className="flex justify-between text-xl pt-6 mt-2 border-t-2 border-emerald-200 font-black text-slate-900 uppercase tracking-tighter">
-                        <span>总配液体积 (含{calcConfig.lossFactor}%损耗)</span>
+                        <span>{t.totalMixVolume(calcConfig.lossFactor)}</span>
                         <span className="text-emerald-600">{mixSummary.totalVol} μl</span>
                       </div>
                    </div>
                    <Dna className="absolute -bottom-12 -right-12 w-56 h-56 text-emerald-200/20 rotate-12 pointer-events-none" />
                 </div>
               ) : (
-                <div className="bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 flex items-center justify-center p-16 text-slate-300 font-black text-xl uppercase tracking-widest">Waiting for data</div>
+                <div className="bg-slate-50 rounded-[3rem] border-4 border-dashed border-slate-200 flex items-center justify-center p-16 text-slate-300 font-black text-xl uppercase tracking-widest">{t.waiting}</div>
               )}
 
               <div className="flex flex-col justify-center space-y-6 px-4">
                  <div className="bg-white p-8 rounded-[2.5rem] border border-slate-100 flex items-start gap-6 shadow-xl shadow-slate-100 transition-all hover:bg-indigo-50/20">
                     <div className="p-4 bg-indigo-600 rounded-3xl text-white shadow-lg flex-shrink-0 animate-bounce"><Info className="w-8 h-8" /></div>
                     <div className="flex-1">
-                      <h4 className="font-black text-indigo-900 text-lg mb-3 uppercase tracking-tight border-b border-slate-100 pb-2 text-left">操作提示</h4>
+                      <h4 className="font-black text-indigo-900 text-lg mb-3 uppercase tracking-tight border-b border-slate-100 pb-2 text-left">{t.tips}</h4>
                       <ul className="text-[12px] text-slate-500 leading-relaxed font-bold space-y-2 text-left">
                         <li className="flex items-start gap-2">
                           <span className="w-4 h-4 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
-                         切换到384孔板模式时，建议使用大屏幕设备查看。
+                         {t.tip1}
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="w-4 h-4 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
-                          直接点击目标加样孔可选中一组复孔，并单独调整复孔方向；按住 Ctrl/Command 键点击可实现多选并批量调节方向。
+                          {t.tip2}
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="w-4 h-4 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-[10px] shrink-0 mt-0.5">3</span>
-                          结构化交换：拖拽已选中孔位，可整体移动并保持其内部横纵结构不变。
+                          {t.tip3}
                         </li>
                         <li className="flex items-start gap-2">
                           <span className="w-4 h-4 bg-indigo-100 text-indigo-600 rounded flex items-center justify-center text-[10px] shrink-0 mt-0.5">4</span>
-                          修改配置后，系统会重置自定义排版并重新执行智能方向决策。
+                          {t.tip4}
                         </li>
                       </ul>
                     </div>
