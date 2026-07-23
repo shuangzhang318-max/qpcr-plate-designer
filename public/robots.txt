@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://qpcr-plate-designer.unwedomain.xyz/sitemap.xml
